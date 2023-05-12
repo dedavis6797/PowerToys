@@ -12,6 +12,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using ColorPicker.Helpers;
+using ManagedCommon;
 using ModernWpf.Controls;
 using ModernWpf.Controls.Primitives;
 
@@ -81,7 +82,7 @@ namespace ColorPicker.Controls
             control._ignoreRGBChanges = false;
             control._ignoreHexChanges = false;
 
-            var hsv = ColorHelper.ConvertToHSVColor(System.Drawing.Color.FromArgb(newColor.R, newColor.G, newColor.B));
+            var hsv = ColorFormatHelper.ConvertToHSVColor(System.Drawing.Color.FromArgb(newColor.R, newColor.G, newColor.B));
 
             SetColorVariationsForCurrentColor(d, hsv);
         }
@@ -102,28 +103,28 @@ namespace ColorPicker.Controls
             HueGradientSlider.Background = gradientBrush;
         }
 
-        private static void SetColorVariationsForCurrentColor(DependencyObject d, (double hue, double saturation, double value) hsv)
+        private static void SetColorVariationsForCurrentColor(DependencyObject d, (double Hue, double Saturation, double Value) hsv)
         {
             var hueCoefficient = 0;
             var hueCoefficient2 = 0;
-            if (1 - hsv.value < 0.15)
+            if (1 - hsv.Value < 0.15)
             {
                 hueCoefficient = 1;
             }
 
-            if (hsv.value - 0.3 < 0)
+            if (hsv.Value - 0.3 < 0)
             {
                 hueCoefficient2 = 1;
             }
 
-            var s = hsv.saturation;
+            var s = hsv.Saturation;
             var control = (ColorPickerControl)d;
 
-            control.colorVariation1Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Min(hsv.hue + (hueCoefficient * 8), 360), s, Math.Min(hsv.value + 0.3, 1)));
-            control.colorVariation2Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Min(hsv.hue + (hueCoefficient * 4), 360), s, Math.Min(hsv.value + 0.15, 1)));
+            control.colorVariation1Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Min(hsv.Hue + (hueCoefficient * 8), 360), s, Math.Min(hsv.Value + 0.3, 1)));
+            control.colorVariation2Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Min(hsv.Hue + (hueCoefficient * 4), 360), s, Math.Min(hsv.Value + 0.15, 1)));
 
-            control.colorVariation3Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Max(hsv.hue - (hueCoefficient2 * 4), 0), s, Math.Max(hsv.value - 0.2, 0)));
-            control.colorVariation4Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Max(hsv.hue - (hueCoefficient2 * 8), 0), s, Math.Max(hsv.value - 0.3, 0)));
+            control.colorVariation3Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Max(hsv.Hue - (hueCoefficient2 * 4), 0), s, Math.Max(hsv.Value - 0.2, 0)));
+            control.colorVariation4Button.Background = new SolidColorBrush(HSVColor.RGBFromHSV(Math.Max(hsv.Hue - (hueCoefficient2 * 8), 0), s, Math.Max(hsv.Value - 0.3, 0)));
         }
 
         private void UpdateValueColorGradient(double posX)
@@ -166,7 +167,8 @@ namespace ColorPicker.Controls
         {
             if (!_ignoreHexChanges)
             {
-                HexCode.Text = ColorToHex(currentColor);
+                // Second parameter is set to keep the hashtag if typed by the user before
+                HexCode.Text = ColorToHex(currentColor, HexCode.Text);
             }
 
             if (!_ignoreRGBChanges)
@@ -232,9 +234,7 @@ namespace ColorPicker.Controls
             DetailsFlyout.Hide();
         }
 
-#pragma warning disable CA1801 // Review unused parameters
         private void DetailsFlyout_Closed(object sender, object e)
-#pragma warning restore CA1801 // Review unused parameters
         {
             HideDetails();
             AppStateHandler.BlockEscapeKeyClosingColorPickerEditor = false;
@@ -246,11 +246,7 @@ namespace ColorPicker.Controls
             HexCode.Text = ColorToHex(_originalColor);
         }
 
-#pragma warning disable CA1822 // Mark members as static
-#pragma warning disable CA1801 // Review unused parameters
         private void DetailsFlyout_Opened(object sender, object e)
-#pragma warning restore CA1801 // Review unused parameters
-#pragma warning restore CA1822 // Mark members as static
         {
             AppStateHandler.BlockEscapeKeyClosingColorPickerEditor = true;
         }
@@ -290,8 +286,8 @@ namespace ColorPicker.Controls
         {
             var newValue = (sender as TextBox).Text;
 
-            // support hex with 3 and 6 characters
-            var reg = new Regex("^#([0-9A-Fa-f]{3}){1,2}$");
+            // support hex with 3 and 6 characters and optional with hashtag
+            var reg = new Regex("^#?([0-9A-Fa-f]{3}){1,2}$");
 
             if (!reg.IsMatch(newValue))
             {
@@ -302,7 +298,8 @@ namespace ColorPicker.Controls
             {
                 var converter = new System.Drawing.ColorConverter();
 
-                var color = (System.Drawing.Color)converter.ConvertFromString(HexCode.Text);
+                // "FormatHexColorString()" is needed to add hashtag if missing and to convert the hex code from three to six characters. Without this we get format exceptions and incorrect color values.
+                var color = (System.Drawing.Color)converter.ConvertFromString(FormatHexColorString(HexCode.Text));
                 _ignoreHexChanges = true;
                 SetColorFromTextBoxes(color);
                 _ignoreHexChanges = false;
@@ -313,11 +310,11 @@ namespace ColorPicker.Controls
         {
             if (!_ignoreGradientsChanges)
             {
-                var hsv = ColorHelper.ConvertToHSVColor(color);
+                var hsv = ColorFormatHelper.ConvertToHSVColor(color);
 
-                var huePosition = (hsv.hue / 360) * HueGradientSlider.Maximum;
-                var saturationPosition = hsv.saturation * SaturationGradientSlider.Maximum;
-                var valuePosition = hsv.value * ValueGradientSlider.Maximum;
+                var huePosition = (hsv.Hue / 360) * HueGradientSlider.Maximum;
+                var saturationPosition = hsv.Saturation * SaturationGradientSlider.Maximum;
+                var valuePosition = hsv.Value * ValueGradientSlider.Maximum;
                 UpdateHueColorGradient(huePosition);
                 UpdateSaturationColorGradient(saturationPosition);
                 UpdateValueColorGradient(valuePosition);
@@ -326,9 +323,33 @@ namespace ColorPicker.Controls
             UpdateTextBoxesAndCurrentColor(Color.FromRgb(color.R, color.G, color.B));
         }
 
-        private static string ColorToHex(Color color)
+        private static string ColorToHex(Color color, string oldValue = "")
         {
-            return "#" + BitConverter.ToString(new byte[] { color.R, color.G, color.B }).Replace("-", string.Empty, StringComparison.InvariantCulture);
+            string newHexString = BitConverter.ToString(new byte[] { color.R, color.G, color.B }).Replace("-", string.Empty, StringComparison.InvariantCulture);
+            newHexString = newHexString.ToLowerInvariant();
+
+            // Return only with hashtag if user typed it before
+            bool addHashtag = oldValue.StartsWith("#", StringComparison.InvariantCulture);
+            return addHashtag ? "#" + newHexString : newHexString;
+        }
+
+        /// <summary>
+        /// Formats the hex code string to be accepted by <see cref="ConvertFromString()"/> of <see cref="ColorConverter.ColorConverter"/>. We are adding hashtag at the beginning if needed and convert from three characters to six characters code.
+        /// </summary>
+        /// <param name="hexCodeText">The string we read from the hex text box.</param>
+        /// <returns>Formatted string with hashtag and six characters of hex code.</returns>
+        private static string FormatHexColorString(string hexCodeText)
+        {
+            if (hexCodeText.Length == 3 || hexCodeText.Length == 4)
+            {
+                // Hex with or without hashtag and three characters
+                return Regex.Replace(hexCodeText, "^#?([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$", "#$1$1$2$2$3$3");
+            }
+            else
+            {
+                // Hex with or without hashtag and six characters
+                return hexCodeText.StartsWith("#", StringComparison.InvariantCulture) ? hexCodeText : "#" + hexCodeText;
+            }
         }
 
         private void HexCode_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)

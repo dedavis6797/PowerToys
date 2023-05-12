@@ -8,16 +8,16 @@
 #include <common/utils/winapi_error.h>
 
 #include <FancyZonesLib/Generated Files/resource.h>
-#include <FancyZonesLib/FancyZonesData.h>
 #include <FancyZonesLib/trace.h>
 #include <FancyZonesLib/Settings.h>
+#include <FancyZonesLib/ModuleConstants.h>
 
 #include <shellapi.h>
 
 // Non-localizable
 const std::wstring fancyZonesPath = L"modules\\FancyZones\\PowerToys.FancyZones.exe";
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+BOOL APIENTRY DllMain(HMODULE /*hModule*/, DWORD ul_reason_for_call, LPVOID /*lpReserved*/)
 {
     switch (ul_reason_for_call)
     {
@@ -51,23 +51,28 @@ public:
         return app_key.c_str();
     }
 
+    // Return the configured status for the gpo policy for the module
+    virtual powertoys_gpo::gpo_rule_configured_t gpo_policy_enabled_configuration() override
+    {
+        return powertoys_gpo::getConfiguredFancyZonesEnabledValue();
+    }
+
     // Return JSON with the configuration options.
     // These are the settings shown on the settings page along with their current values.
-    virtual bool get_config(_Out_ PWSTR buffer, _Out_ int* buffer_size) override
+    virtual bool get_config(_Out_ PWSTR /*buffer*/, _Out_ int* /*buffer_size*/) override
     {
-        return m_settings->GetConfig(buffer, buffer_size);
+        return false;
     }
 
     // Passes JSON with the configuration settings for the powertoy.
     // This is called when the user hits Save on the settings page.
-    virtual void set_config(PCWSTR config) override
+    virtual void set_config(PCWSTR /*config*/) override
     {
-        m_settings->SetConfig(config);
     }
 
     // Signal from the Settings editor to call a custom action.
     // This can be used to spawn more complex editors.
-    virtual void call_custom_action(const wchar_t* action) override
+    virtual void call_custom_action(const wchar_t* /*action*/) override
     {
         SetEvent(m_toggleEditorEvent);
     }
@@ -111,14 +116,14 @@ public:
     virtual void send_settings_telemetry() override
     {
         Logger::info("Send settings telemetry");
-        Trace::SettingsTelemetry(*m_settings->GetSettings());
+        FancyZonesSettings::instance().LoadSettings();
+        Trace::SettingsTelemetry(FancyZonesSettings::settings());
     }
 
     FancyZonesModuleInterface()
     {
         app_name = GET_RESOURCE_STRING(IDS_FANCYZONES);
-        app_key = NonLocalizable::FancyZonesStr;
-        m_settings = MakeFancyZonesSettings(reinterpret_cast<HINSTANCE>(&__ImageBase), FancyZonesModuleInterface::get_name(), FancyZonesModuleInterface::get_key());
+        app_key = NonLocalizable::ModuleKey;
 
         m_toggleEditorEvent = CreateDefaultEvent(CommonSharedConstants::FANCY_ZONES_EDITOR_TOGGLE_EVENT);
         if (!m_toggleEditorEvent)
@@ -215,8 +220,6 @@ private:
 
     // Handle to event used to invoke FancyZones Editor
     HANDLE m_toggleEditorEvent;
-
-    winrt::com_ptr<IFancyZonesSettings> m_settings;
 };
 
 extern "C" __declspec(dllexport) PowertoyModuleIface* __cdecl powertoy_create()

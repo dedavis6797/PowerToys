@@ -3,8 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using Common.UI;
 using ManagedCommon;
-using Microsoft.PowerToys.Common.UI;
 
 namespace Wox.Plugin
 {
@@ -24,9 +24,9 @@ namespace Wox.Plugin
         void ChangeQuery(string query, bool requery = false);
 
         /// <summary>
-        /// Restart Wox
+        /// Remove user selected history item and refresh/requery
         /// </summary>
-        void RestartApp();
+        void RemoveUserSelectedItem(Result result);
 
         /// <summary>
         /// Get current theme
@@ -63,12 +63,6 @@ namespace Wox.Plugin
         /// <param name="subTitle">Message subtitle</param>
         /// <param name="iconPath">Message icon path (relative path to your plugin folder)</param>
         void ShowMsg(string title, string subTitle = "", string iconPath = "", bool useMainWindowAsOwner = true);
-
-        /// <summary>
-        /// Install Wox plugin
-        /// </summary>
-        /// <param name="path">Plugin path (ends with .wox)</param>
-        void InstallPlugin(string path);
 
         /// <summary>
         /// Get all loaded plugins

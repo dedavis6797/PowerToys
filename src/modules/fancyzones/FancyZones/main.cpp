@@ -2,7 +2,8 @@
 
 #include <common/utils/ProcessWaiter.h>
 #include <common/utils/window.h>
-#include <common/utils/UnhandledExceptionHandler_x64.h>
+#include <common/utils/UnhandledExceptionHandler.h>
+#include <common/utils/gpo.h>
 
 #include <FancyZonesLib/trace.h>
 #include <FancyZonesLib/Generated Files/resource.h>
@@ -12,8 +13,8 @@
 #include <common/utils/resources.h>
 
 #include <FancyZonesLib/FancyZones.h>
-#include <FancyZonesLib/FancyZonesData.h>
 #include <FancyZonesLib/FancyZonesWinHookEventIDs.h>
+#include <FancyZonesLib/ModuleConstants.h>
 
 #include <FancyZonesApp.h>
 
@@ -26,7 +27,14 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 {
     winrt::init_apartment();
     LoggerHelpers::init_logger(moduleName, internalPath, LogSettings::fancyZonesLoggerName);
-    InitUnhandledExceptionHandler_x64();    
+
+    if (powertoys_gpo::getConfiguredFancyZonesEnabledValue() == powertoys_gpo::gpo_rule_configured_disabled)
+    {
+        Logger::warn(L"Tried to start with a GPO policy setting the utility to always be disabled. Please contact your systems administrator.");
+        return 0;
+    }
+
+    InitUnhandledExceptionHandler();    
 
     auto mutex = CreateMutex(nullptr, true, instanceMutexName.c_str());
     if (mutex == nullptr)
@@ -61,7 +69,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
     Trace::RegisterProvider();
 
-    FancyZonesApp app(GET_RESOURCE_STRING(IDS_FANCYZONES), NonLocalizable::FancyZonesStr);
+    FancyZonesApp app(GET_RESOURCE_STRING(IDS_FANCYZONES), NonLocalizable::ModuleKey);
     app.Run();
 
     run_message_loop();

@@ -25,26 +25,51 @@ PowerPreviewModule::PowerPreviewModule() :
     Logger::init(LogSettings::fileExplorerLoggerName, logFilePath.wstring(), PTSettingsHelper::get_log_settings_file_location());
 
     Logger::info("Initializing PowerPreviewModule");
-    const bool installPerUser = false;
+    const bool installPerUser = true;
     m_fileExplorerModules.push_back({ .settingName = L"svg-previewer-toggle-setting",
                                       .settingDescription = GET_RESOURCE_STRING(IDS_PREVPANE_SVG_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredSvgPreviewEnabledValue,
                                       .registryChanges = getSvgPreviewHandlerChangeSet(installationDir, installPerUser) });
 
     m_fileExplorerModules.push_back({ .settingName = L"md-previewer-toggle-setting",
                                       .settingDescription = GET_RESOURCE_STRING(IDS_PREVPANE_MD_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredMarkdownPreviewEnabledValue,
                                       .registryChanges = getMdPreviewHandlerChangeSet(installationDir, installPerUser) });
+
+    m_fileExplorerModules.push_back({ .settingName = L"monaco-previewer-toggle-setting",
+                                      .settingDescription = GET_RESOURCE_STRING(IDS_PREVPANE_MONACO_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredMonacoPreviewEnabledValue,
+                                      .registryChanges = getMonacoPreviewHandlerChangeSet(installationDir, installPerUser) });
 
     m_fileExplorerModules.push_back({ .settingName = L"pdf-previewer-toggle-setting",
                                       .settingDescription = GET_RESOURCE_STRING(IDS_PREVPANE_PDF_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredPdfPreviewEnabledValue,
                                       .registryChanges = getPdfPreviewHandlerChangeSet(installationDir, installPerUser) });
+
+    m_fileExplorerModules.push_back({ .settingName = L"gcode-previewer-toggle-setting",
+                                      .settingDescription = GET_RESOURCE_STRING(IDS_PREVPANE_GCODE_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredGcodePreviewEnabledValue,
+                                      .registryChanges = getGcodePreviewHandlerChangeSet(installationDir, installPerUser) });
 
     m_fileExplorerModules.push_back({ .settingName = L"svg-thumbnail-toggle-setting",
                                       .settingDescription = GET_RESOURCE_STRING(IDS_SVG_THUMBNAIL_PROVIDER_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredSvgThumbnailsEnabledValue,
                                       .registryChanges = getSvgThumbnailHandlerChangeSet(installationDir, installPerUser) });
 
     m_fileExplorerModules.push_back({ .settingName = L"pdf-thumbnail-toggle-setting",
                                       .settingDescription = GET_RESOURCE_STRING(IDS_PDF_THUMBNAIL_PROVIDER_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredPdfThumbnailsEnabledValue,
                                       .registryChanges = getPdfThumbnailHandlerChangeSet(installationDir, installPerUser) });
+
+    m_fileExplorerModules.push_back({ .settingName = L"gcode-thumbnail-toggle-setting",
+                                      .settingDescription = GET_RESOURCE_STRING(IDS_GCODE_THUMBNAIL_PROVIDER_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredGcodeThumbnailsEnabledValue,
+                                      .registryChanges = getGcodeThumbnailHandlerChangeSet(installationDir, installPerUser) });
+
+    m_fileExplorerModules.push_back({ .settingName = L"stl-thumbnail-toggle-setting",
+                                      .settingDescription = GET_RESOURCE_STRING(IDS_STL_THUMBNAIL_PROVIDER_SETTINGS_DESCRIPTION),
+                                      .checkModuleGPOEnabledRuleFunction = powertoys_gpo::getConfiguredStlThumbnailsEnabledValue,
+                                      .registryChanges = getStlThumbnailHandlerChangeSet(installationDir, installPerUser) });
 
     try
     {
@@ -136,20 +161,12 @@ void PowerPreviewModule::enable()
 // Disable active preview handlers.
 void PowerPreviewModule::disable()
 {
-    // Check if the process is elevated in order to have permissions to modify HKLM registry
-    if (is_process_elevated(false))
+    for (auto& fileExplorerModule : m_fileExplorerModules)
     {
-        for (auto& fileExplorerModule : m_fileExplorerModules)
+        if (!fileExplorerModule.registryChanges.unApply())
         {
-            if (!fileExplorerModule.registryChanges.unApply())
-            {
-                Logger::error(L"Couldn't disable file explorer module {} during module disable() call", fileExplorerModule.settingName);
-            }
+            Logger::error(L"Couldn't disable file explorer module {} during module disable() call", fileExplorerModule.settingName);
         }
-    }
-    else
-    {
-        show_update_warning_message();
     }
 
     if (m_enabled)
@@ -189,27 +206,48 @@ void PowerPreviewModule::show_update_warning_message()
 
 void PowerPreviewModule::apply_settings(const PowerToysSettings::PowerToyValues& settings)
 {
-    const bool isElevated = is_process_elevated(false);
     bool notifyShell = false;
-    bool updatesNeeded = false;
 
     for (auto& fileExplorerModule : m_fileExplorerModules)
     {
         const auto toggle = settings.get_bool_value(fileExplorerModule.settingName);
+        const auto gpo_rule = fileExplorerModule.checkModuleGPOEnabledRuleFunction();
+        const auto gpo_is_configured = gpo_rule == powertoys_gpo::gpo_rule_configured_enabled || gpo_rule == powertoys_gpo::gpo_rule_configured_disabled;
+
+        if (gpo_rule == powertoys_gpo::gpo_rule_configured_unavailable)
+        {
+            Logger::warn(L"Couldn't read the gpo rule for Power Preview module {}", fileExplorerModule.settingName);
+        }
+        if (gpo_rule == powertoys_gpo::gpo_rule_configured_wrong_value)
+        {
+            Logger::warn(L"gpo rule for Power Preview module {} is set to an unknown value", fileExplorerModule.settingName);
+        }
 
         // Skip if no need to update
-        if (!toggle.has_value() || *toggle == fileExplorerModule.registryChanges.isApplied())
+        if (!toggle.has_value() && !gpo_is_configured)
         {
             continue;
         }
-        else
+
+        bool module_new_state = false;
+        if (toggle.has_value())
         {
-            // Mark that updates were to the registry were needed
-            updatesNeeded = true;
+            module_new_state = *toggle;
+        }
+        if (gpo_is_configured)
+        {
+            // gpo rule overrides settings state
+            module_new_state = gpo_rule == powertoys_gpo::gpo_rule_configured_enabled;
+        }
+
+        // Skip if no need to update
+        if (module_new_state == fileExplorerModule.registryChanges.isApplied())
+        {
+            continue;
         }
 
         // (Un)Apply registry changes depending on the new setting value
-        const bool updated = *toggle ? fileExplorerModule.registryChanges.apply() : fileExplorerModule.registryChanges.unApply();
+        const bool updated = module_new_state ? fileExplorerModule.registryChanges.apply() : fileExplorerModule.registryChanges.unApply();
 
         if (updated)
         {
@@ -221,10 +259,6 @@ void PowerPreviewModule::apply_settings(const PowerToysSettings::PowerToyValues&
             Logger::error(L"Couldn't {} file explorer module {} during apply_settings", *toggle ? L"enable " : L"disable", fileExplorerModule.settingName);
             Trace::PowerPreviewSettingsUpdateFailed(fileExplorerModule.settingName.c_str(), !*toggle, *toggle, true);
         }
-    }
-    if (!isElevated && updatesNeeded)
-    {
-        show_update_warning_message();
     }
     if (notifyShell)
     {

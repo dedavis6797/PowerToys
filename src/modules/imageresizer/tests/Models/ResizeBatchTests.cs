@@ -58,7 +58,7 @@ namespace ImageResizer.Models
         [TestMethod]
         public void ProcessAggregatesErrors()
         {
-            var batch = CreateBatch(file => throw new Exception("Error: " + file));
+            var batch = CreateBatch(file => throw new InvalidOperationException("Error: " + file));
             batch.Files.Add("Image1.jpg");
             batch.Files.Add("Image2.jpg");
 
@@ -86,7 +86,7 @@ namespace ImageResizer.Models
             var batch = CreateBatch(_ => { });
             batch.Files.Add("Image1.jpg");
             batch.Files.Add("Image2.jpg");
-            var calls = new ConcurrentBag<(int i, double count)>();
+            var calls = new ConcurrentBag<(int I, double Count)>();
 
             batch.Process(
                 (i, count) => calls.Add((i, count)),

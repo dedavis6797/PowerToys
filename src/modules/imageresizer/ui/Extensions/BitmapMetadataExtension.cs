@@ -75,9 +75,7 @@ namespace ImageResizer.Extensions
                     metadata.RemoveQuery(query);
                 }
             }
-#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception ex)
-#pragma warning restore CA1031 // Do not catch general exception types
             {
                 Debug.WriteLine($"Exception while trying to remove metadata entry at position: {query}");
                 Debug.WriteLine(ex);
@@ -95,9 +93,7 @@ namespace ImageResizer.Extensions
             {
                 metadata.SetQuery(query, value);
             }
-#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception ex)
-#pragma warning restore CA1031 // Do not catch general exception types
             {
                 Debug.WriteLine($"Exception while trying to set metadata {value} at position: {query}");
                 Debug.WriteLine(ex);
@@ -105,14 +101,29 @@ namespace ImageResizer.Extensions
         }
 
         /// <summary>
-        /// Gets all metadata
-        /// Iterates recursively through all metadata
+        /// Gets all metadata.
+        /// Iterates recursively through metadata and adds valid items to a list while skipping invalid data items.
         /// </summary>
-        public static List<(string metadataPath, object value)> GetListOfMetadata(this BitmapMetadata metadata)
+        /// <remarks>
+        /// Invalid data items are items which throw an exception when reading the data with metadata.GetQuery(...).
+        /// Sometimes Metadata collections are improper closed and cause an exception on IEnumerator.MoveNext(). In this case, we return all data items which were successfully collected so far.
+        /// </remarks>
+        /// <returns>
+        /// metadata path and metadata value of all successfully read data items.
+        /// </returns>
+        public static List<(string MetadataPath, object Value)> GetListOfMetadata(this BitmapMetadata metadata)
         {
-            var listOfAllMetadata = new List<(string metadataPath, object value)>();
+            var listOfAllMetadata = new List<(string MetadataPath, object Value)>();
 
-            GetMetadataRecursively(metadata, string.Empty);
+            try
+            {
+                GetMetadataRecursively(metadata, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Exception while trying to iterate recursively over metadata. We were able to read {listOfAllMetadata.Count} metadata entries.");
+                Debug.WriteLine(ex);
+            }
 
             return listOfAllMetadata;
 
@@ -128,9 +139,7 @@ namespace ImageResizer.Extensions
                     {
                         metadataQueryReader = GetQueryWithPreCheck(metadata, relativeQuery);
                     }
-#pragma warning disable CA1031 // Do not catch general exception types
                     catch (Exception ex)
-#pragma warning restore CA1031 // Do not catch general exception types
                     {
                         Debug.WriteLine($"Removing corrupt metadata property {absolutePath}. Skipping metadata entry | {ex.Message}");
                         Debug.WriteLine(ex);
@@ -187,7 +196,7 @@ namespace ImageResizer.Extensions
             foreach (var metadataItem in listOfMetadata)
             {
                 // Debug.WriteLine($"modifiableMetadata.RemoveQuerySafe(\"{metadataItem.metadataPath}\");");
-                Debug.WriteLine($"{metadataItem.metadataPath} | {metadataItem.value}");
+                Debug.WriteLine($"{metadataItem.MetadataPath} | {metadataItem.Value}");
             }
         }
 
@@ -198,16 +207,29 @@ namespace ImageResizer.Extensions
         /// <remarks>
         /// Intented for debug only!!!
         /// </remarks>
-        public static List<(string metadataPath, object value)> GetListOfMetadataForDebug(this BitmapMetadata metadata)
+        public static List<(string MetadataPath, object Value)> GetListOfMetadataForDebug(this BitmapMetadata metadata)
         {
-            var listOfAllMetadata = new List<(string metadataPath, object value)>();
+            var listOfAllMetadata = new List<(string MetadataPath, object Value)>();
 
-            GetMetadataRecursively(metadata, string.Empty);
+            try
+            {
+                GetMetadataRecursively(metadata, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Exception while trying to iterate recursively over metadata. We were able to read {listOfAllMetadata.Count} metadata entries.");
+                Debug.WriteLine(ex);
+            }
 
             return listOfAllMetadata;
 
             void GetMetadataRecursively(BitmapMetadata metadata, string query)
             {
+                if (metadata == null)
+                {
+                    return;
+                }
+
                 foreach (string relativeQuery in metadata)
                 {
                     string absolutePath = query + relativeQuery;
@@ -219,9 +241,7 @@ namespace ImageResizer.Extensions
                         metadataQueryReader = metadata.GetQuerySafe(relativeQuery);
                         listOfAllMetadata.Add((absolutePath, metadataQueryReader));
                     }
-#pragma warning disable CA1031 // Do not catch general exception types
                     catch (Exception ex)
-#pragma warning restore CA1031 // Do not catch general exception types
                     {
                         listOfAllMetadata.Add((absolutePath, $"######## INVALID METADATA: {ex.Message}"));
                         Debug.WriteLine(ex);

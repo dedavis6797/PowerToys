@@ -49,23 +49,27 @@ std::optional<fs::path> CopySelfToTempDir()
     return std::move(dst_path);
 }
 
-std::optional<fs::path> ObtainInstallerPath()
+std::optional<fs::path> ObtainInstaller(bool& isUpToDate)
 {
     using namespace updating;
 
+    isUpToDate = false;
+
     auto state = UpdateState::read();
+
+    const auto new_version_info = get_github_version_info_async().get();
+    if (std::holds_alternative<version_up_to_date>(*new_version_info))
+    {
+        isUpToDate = true;
+        Logger::error("Invoked with -update_now argument, but no update was available");
+        return std::nullopt;
+    }
+
     if (state.state == UpdateState::readyToDownload || state.state == UpdateState::errorDownloading)
     {
-        const auto new_version_info = get_github_version_info_async().get();
         if (!new_version_info)
         {
             Logger::error(L"Couldn't obtain github version info: {}", new_version_info.error());
-            return std::nullopt;
-        }
-
-        if (!std::holds_alternative<new_version_download_info>(*new_version_info))
-        {
-            Logger::error("Invoked with -update_now argument, but no update was available");
             return std::nullopt;
         }
 
@@ -90,26 +94,23 @@ std::optional<fs::path> ObtainInstallerPath()
             return std::nullopt;
         }
     }
-    else
+    else if (state.state == UpdateState::upToDate)
     {
-        Logger::error("Invoked with -update_now argument, but update state was invalid");
+        isUpToDate = true;
         return std::nullopt;
     }
+
+    Logger::error("Invoked with -update_now argument, but update state was invalid");
+    return std::nullopt;
 }
 
-bool InstallNewVersionStage1()
+bool InstallNewVersionStage1(fs::path installer)
 {
-    const auto installer = ObtainInstallerPath();
-    if (!installer)
-    {
-        return false;
-    }
-
     if (auto copy_in_temp = CopySelfToTempDir())
     {
         // Detect if PT was running
         const auto pt_main_window = FindWindowW(pt_tray_icon_window_class, nullptr);
-        const bool launch_powertoys = pt_main_window != nullptr;
+
         if (pt_main_window != nullptr)
         {
             SendMessageW(pt_main_window, WM_CLOSE, 0, 0);
@@ -117,11 +118,8 @@ bool InstallNewVersionStage1()
 
         std::wstring arguments{ UPDATE_NOW_LAUNCH_STAGE2 };
         arguments += L" \"";
-        arguments += installer->c_str();
-        arguments += L"\" \"";
-        arguments += get_module_folderpath();
-        arguments += L"\" ";
-        arguments += launch_powertoys ? UPDATE_STAGE2_RESTART_PT : UPDATE_STAGE2_DONT_START_PT;
+        arguments += installer.c_str();
+        arguments += L"\"";
         SHELLEXECUTEINFOW sei{ sizeof(sei) };
         sei.fMask = { SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC };
         sei.lpFile = copy_in_temp->c_str();
@@ -136,7 +134,7 @@ bool InstallNewVersionStage1()
     }
 }
 
-bool InstallNewVersionStage2(std::wstring installer_path, std::wstring_view install_path, bool launch_powertoys)
+bool InstallNewVersionStage2(std::wstring installer_path)
 {
     std::transform(begin(installer_path), end(installer_path), begin(installer_path), ::towlower);
 
@@ -148,22 +146,12 @@ bool InstallNewVersionStage2(std::wstring installer_path, std::wstring_view inst
     }
     else
     {
-        // If it's not .msi, then it's our .exe installer
+        // If it's not .msi, then it's a wix bootstrapper
         SHELLEXECUTEINFOW sei{ sizeof(sei) };
         sei.fMask = { SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE };
         sei.lpFile = installer_path.c_str();
         sei.nShow = SW_SHOWNORMAL;
-        std::wstring parameters = L"--no_full_ui";
-        if (launch_powertoys)
-        {
-            // .exe installer launches the main app by default
-            launch_powertoys = false;
-        }
-        else
-        {
-            parameters += L"--no_start_pt";
-        }
-
+        std::wstring parameters = L"/passive /norestart";
         sei.lpParameters = parameters.c_str();
 
         success = ShellExecuteExW(&sei) == TRUE;
@@ -184,26 +172,11 @@ bool InstallNewVersionStage2(std::wstring installer_path, std::wstring_view inst
         return false;
     }
 
-    std::error_code _;
-    fs::remove(installer_path, _);
-
     UpdateState::store([&](UpdateState& state) {
         state = {};
         state.githubUpdateLastCheckedDate.emplace(timeutil::now());
         state.state = UpdateState::upToDate;
     });
-
-    if (launch_powertoys)
-    {
-        std::wstring new_pt_path{ install_path };
-        new_pt_path += L"\\PowerToys.exe";
-        SHELLEXECUTEINFOW sei{ sizeof(sei) };
-        sei.fMask = { SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC };
-        sei.lpFile = new_pt_path.c_str();
-        sei.nShow = SW_SHOWNORMAL;
-        sei.lpParameters = UPDATE_REPORT_SUCCESS;
-        return ShellExecuteExW(&sei) == TRUE;
-    }
 
     return true;
 }
@@ -225,13 +198,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     if (action == UPDATE_NOW_LAUNCH_STAGE1)
     {
-        const bool failed = !InstallNewVersionStage1();
+        bool isUpToDate = false;
+        auto installerPath = ObtainInstaller(isUpToDate);
+        bool failed = !installerPath.has_value();
+        failed = failed || !InstallNewVersionStage1(std::move(*installerPath));
         if (failed)
         {
             UpdateState::store([&](UpdateState& state) {
-                state.downloadedInstallerFilename = {};
+                state = {};
                 state.githubUpdateLastCheckedDate.emplace(timeutil::now());
-                state.state = UpdateState::errorDownloading;
+                state.state = isUpToDate ? UpdateState::upToDate : UpdateState::errorDownloading;
             });
         }
         return failed;
@@ -239,11 +215,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     else if (action == UPDATE_NOW_LAUNCH_STAGE2)
     {
         using namespace std::string_view_literals;
-        const bool failed = !InstallNewVersionStage2(args[2], args[3], args[4] == std::wstring_view{ UPDATE_STAGE2_RESTART_PT });
+        const bool failed = !InstallNewVersionStage2(args[2]);
         if (failed)
         {
             UpdateState::store([&](UpdateState& state) {
-                state.downloadedInstallerFilename = {};
+                state = {};
                 state.githubUpdateLastCheckedDate.emplace(timeutil::now());
                 state.state = UpdateState::errorDownloading;
             });

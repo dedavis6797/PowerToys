@@ -11,9 +11,9 @@ using System.Text.RegularExpressions;
 using System.Windows.Controls;
 using ManagedCommon;
 using Microsoft.Plugin.Indexer.DriveDetection;
+using Microsoft.Plugin.Indexer.Interop;
 using Microsoft.Plugin.Indexer.SearchHelper;
 using Microsoft.PowerToys.Settings.UI.Library;
-using Microsoft.Search.Interop;
 using Wox.Infrastructure;
 using Wox.Infrastructure.Storage;
 using Wox.Plugin;
@@ -71,7 +71,6 @@ namespace Microsoft.Plugin.Indexer
         }
 
         // This function uses the Windows indexer and returns the list of results obtained
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "We want to keep the process alive but will log the exception")]
         public List<Result> Query(Query query, bool isFullQuery)
         {
             var results = new List<Result>();

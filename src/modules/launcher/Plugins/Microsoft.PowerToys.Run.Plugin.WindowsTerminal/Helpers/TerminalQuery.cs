@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Principal;
 using Windows.Management.Deployment;
+using Wox.Plugin.Logger;
 
 namespace Microsoft.PowerToys.Run.Plugin.WindowsTerminal.Helpers
 {
@@ -16,6 +17,7 @@ namespace Microsoft.PowerToys.Run.Plugin.WindowsTerminal.Helpers
     {
         private readonly PackageManager _packageManager;
 
+        // Static list of all Windows Terminal packages.
         private static ReadOnlyCollection<string> Packages => new List<string>
         {
             "Microsoft.WindowsTerminal",
@@ -33,10 +35,16 @@ namespace Microsoft.PowerToys.Run.Plugin.WindowsTerminal.Helpers
         {
             var profiles = new List<TerminalProfile>();
 
+            if (!Terminals.Any())
+            {
+                Log.Warn($"No Windows Terminal packages installed", typeof(TerminalQuery));
+            }
+
             foreach (var terminal in Terminals)
             {
                 if (!File.Exists(terminal.SettingsPath))
                 {
+                    Log.Warn($"Failed to find settings file {terminal.SettingsPath}", typeof(TerminalQuery));
                     continue;
                 }
 
@@ -54,7 +62,9 @@ namespace Microsoft.PowerToys.Run.Plugin.WindowsTerminal.Helpers
 
             foreach (var p in _packageManager.FindPackagesForUser(user.Value).Where(p => Packages.Contains(p.Id.Name)))
             {
-                var aumid = p.GetAppListEntries().Single().AppUserModelId;
+                var appListEntries = p.GetAppListEntries();
+
+                var aumid = appListEntries.Single().AppUserModelId;
                 var version = new Version(p.Id.Version.Major, p.Id.Version.Minor, p.Id.Version.Build, p.Id.Version.Revision);
                 var settingsPath = Path.Combine(localAppDataPath, "Packages", p.Id.FamilyName, "LocalState", "settings.json");
                 yield return new TerminalPackage(aumid, version, p.DisplayName, settingsPath, p.Logo.LocalPath);

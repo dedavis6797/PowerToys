@@ -14,6 +14,7 @@
 #include <common/utils/winapi_error.h>
 
 #include <filesystem>
+#include <mutex>
 
 namespace
 {
@@ -28,7 +29,7 @@ namespace
     const wchar_t JSON_KEY_USE_CENTRALIZED_KEYBOARD_HOOK[] = L"use_centralized_keyboard_hook";
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+BOOL APIENTRY DllMain(HMODULE /*hModule*/, DWORD ul_reason_for_call, LPVOID /*lpReserved*/)
 {
     switch (ul_reason_for_call)
     {
@@ -42,6 +43,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         Trace::UnregisterProvider();
         break;
     }
+
     return TRUE;
 }
 
@@ -60,6 +62,8 @@ private:
     // Load initial settings from the persisted values.
     void init_settings();
 
+    bool processStarting = false;
+    std::mutex processStartingMutex;
     bool processStarted = false;
 
     //contains the name of the powerToys
@@ -149,6 +153,12 @@ public:
         return app_key.c_str();
     }
 
+    // Return the configured status for the gpo policy for the module
+    virtual powertoys_gpo::gpo_rule_configured_t gpo_policy_enabled_configuration() override
+    {
+        return powertoys_gpo::getConfiguredPowerLauncherEnabledValue();
+    }
+
     // Return JSON with the configuration options.
     virtual bool get_config(wchar_t* buffer, int* buffer_size) override
     {
@@ -173,7 +183,7 @@ public:
             PowerToysSettings::CustomActionObject action_object =
                 PowerToysSettings::CustomActionObject::from_json_string(action);
         }
-        catch (std::exception ex)
+        catch (std::exception&)
         {
             // Improper JSON.
         }
@@ -195,7 +205,7 @@ public:
             // Otherwise call a custom function to process the settings before saving them to disk:
             // save_settings();
         }
-        catch (std::exception ex)
+        catch (std::exception&)
         {
             // Improper JSON.
         }
@@ -204,14 +214,42 @@ public:
     // Enable the powertoy
     virtual void enable()
     {
-        Logger::info("Microsoft_Launcher::enable()");
-        m_enabled = true;
+        Logger::info("Microsoft_Launcher::enable() begin");
+
+        // This synchronization code is here since we've seen logs of this function being entered twice in the same process/thread pair.
+        // The theory here is that the call to ShellExecuteExW might be enabling some context switching that allows the low level keyboard hook to be run.
+        // Ref: https://github.com/microsoft/PowerToys/issues/12908#issuecomment-986995633
+        // We want only one instance to be started at the same time.
+        processStartingMutex.lock();
+        if (processStarting)
+        {
+            processStartingMutex.unlock();
+            Logger::warn(L"Two PowerToys Run processes were trying to get started at the same time.");
+            return;
+        }
+        else
+        {
+            processStarting = true;
+            processStartingMutex.unlock();
+        }
+
         ResetEvent(m_hCentralizedKeyboardHookEvent);
         ResetEvent(send_telemetry_event);
 
         unsigned long powertoys_pid = GetCurrentProcessId();
         TerminateRunningInstance();
-        if (!is_process_elevated(false))
+        if (is_process_elevated(false))
+        {
+            Logger::trace("Starting PowerToys Run from elevated process");
+            const auto modulePath = get_module_folderpath();
+            std::wstring runExecutablePath = modulePath;
+            std::wstring params;
+            params += L" -powerToysPid " + std::to_wstring(powertoys_pid) + L" ";
+            params += L"--started-from-runner ";
+            runExecutablePath += L"\\modules\\launcher\\PowerToys.PowerLauncher.exe";
+            processStarted = RunNonElevatedFailsafe(runExecutablePath, params, modulePath).has_value();
+        }
+        else
         {
             Logger::trace("Starting PowerToys Run from not elevated process");
             std::wstring executable_args;
@@ -221,7 +259,7 @@ public:
 
             SHELLEXECUTEINFOW sei{ sizeof(sei) };
             sei.fMask = { SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI };
-            sei.lpFile = L"modules\\launcher\\PowerLauncher.exe";
+            sei.lpFile = L"modules\\launcher\\PowerToys.PowerLauncher.exe";
             sei.nShow = SW_SHOWNORMAL;
             sei.lpParameters = executable_args.data();
 
@@ -235,35 +273,9 @@ public:
                 Logger::error("Launcher failed to start");
             }
         }
-        else
-        {
-            Logger::trace("Starting PowerToys Run from elevated process");
-            std::wstring runExecutablePath = get_module_folderpath();
-            std::wstring params;
-            params += L" -powerToysPid " + std::to_wstring(powertoys_pid) + L" ";
-            params += L"--started-from-runner ";
-            runExecutablePath += L"\\modules\\launcher\\PowerLauncher.exe";
-            if (RunNonElevatedEx(runExecutablePath, params))
-            {
-                processStarted = true;
-                Logger::trace(L"The process started successfully");
-            }
-            else
-            {
-                Logger::warn(L"RunNonElevatedEx() failed. Trying fallback");
-                std::wstring action_runner_path = get_module_folderpath() + L"\\PowerToys.ActionRunner.exe";
-                std::wstring newParams = L"-run-non-elevated -target modules\\launcher\\PowerLauncher.exe " + params;
-                if (run_non_elevated(action_runner_path, newParams, nullptr))
-                {
-                    processStarted = true;
-                    Logger::trace("Started PowerToys Run Process");
-                }
-                else
-                {
-                    Logger::warn("Failed to start PowerToys Run");
-                }
-            }
-        }
+        processStarting = false;
+        m_enabled = true;
+        Logger::info("Microsoft_Launcher::enable() end");
     }
 
     // Disable the powertoy
@@ -307,7 +319,7 @@ public:
     }
 
     // Process the hotkey event
-    virtual bool on_hotkey(size_t hotkeyId) override
+    virtual bool on_hotkey(size_t /*hotkeyId*/) override
     {
         // For now, hotkeyId will always be zero
         if (m_enabled)
@@ -320,7 +332,8 @@ public:
 
             /* Now, PowerToys Run uses a global hotkey so that it can get focus.
              * Activate it with the centralized keyboard hook only if the setting is on.*/
-            if (m_use_centralized_keyboard_hook) {
+            if (m_use_centralized_keyboard_hook)
+            {
                 Logger::trace("Set POWER_LAUNCHER_SHARED_EVENT");
                 SetEvent(m_hCentralizedKeyboardHookEvent);
                 return true;
@@ -336,7 +349,7 @@ public:
         DWORD windowPid;
         GetWindowThreadProcessId(nextWindow, &windowPid);
 
-        if (windowPid == (DWORD)closePid)
+        if (windowPid == static_cast<DWORD>(closePid))
             ::PostMessage(nextWindow, WM_CLOSE, 0, 0);
 
         return true;
@@ -360,7 +373,7 @@ void Microsoft_Launcher::init_settings()
 
         parse_hotkey(settings);
     }
-    catch (std::exception ex)
+    catch (std::exception&)
     {
         // Error while loading from the settings file. Let default values stay as they are.
     }
@@ -381,14 +394,14 @@ void Microsoft_Launcher::parse_hotkey(PowerToysSettings::PowerToyValues& setting
             m_hotkey.ctrl = jsonHotkeyObject.GetNamedBoolean(JSON_KEY_CTRL);
             m_hotkey.key = static_cast<unsigned char>(jsonHotkeyObject.GetNamedNumber(JSON_KEY_CODE));
         }
-        catch(...)
+        catch (...)
         {
             Logger::error("Failed to initialize PT Run start shortcut");
         }
         try
         {
             auto jsonPropertiesObject = settingsObject.GetNamedObject(JSON_KEY_PROPERTIES);
-            m_use_centralized_keyboard_hook = (bool)jsonPropertiesObject.GetNamedBoolean(JSON_KEY_USE_CENTRALIZED_KEYBOARD_HOOK);
+            m_use_centralized_keyboard_hook =jsonPropertiesObject.GetNamedBoolean(JSON_KEY_USE_CENTRALIZED_KEYBOARD_HOOK);
         }
         catch (...)
         {

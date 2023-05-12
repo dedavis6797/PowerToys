@@ -11,6 +11,7 @@ struct GeneralSettings
     bool isRunElevated;
     bool isAdmin;
     bool downloadUpdatesAutomatically;
+    bool enableExperimentation;
     std::wstring theme;
     std::wstring systemTheme;
     std::wstring powerToysVersion;
@@ -21,4 +22,4 @@ struct GeneralSettings
 json::JsonObject load_general_settings();
 GeneralSettings get_general_settings();
 void apply_general_settings(const json::JsonObject& general_configs, bool save = true);
-void start_initial_powertoys();
+void start_enabled_powertoys();

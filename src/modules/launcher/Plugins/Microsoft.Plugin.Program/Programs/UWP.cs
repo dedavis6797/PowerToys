@@ -11,7 +11,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Xml.Linq;
 using Microsoft.Plugin.Program.Logger;
-using Microsoft.Plugin.Program.Win32;
+using Wox.Plugin.Common.Win32;
 using Wox.Plugin.Logger;
 
 namespace Microsoft.Plugin.Program.Programs
@@ -36,6 +36,9 @@ namespace Microsoft.Plugin.Program.Programs
 
         public string Location { get; set; }
 
+        // Localized path based on windows display language
+        public string LocationLocalized { get; set; }
+
         public IList<UWPApplication> Apps { get; private set; }
 
         public PackageVersion Version { get; set; }
@@ -57,16 +60,17 @@ namespace Microsoft.Plugin.Program.Programs
         public void InitializeAppInfo(string installedLocation)
         {
             Location = installedLocation;
+            LocationLocalized = Main.ShellLocalizationHelper.GetLocalizedPath(installedLocation);
             var path = Path.Combine(installedLocation, "AppxManifest.xml");
 
             var namespaces = XmlNamespaces(path);
             InitPackageVersion(namespaces);
 
             const uint noAttribute = 0x80;
-            const Stgm exclusiveRead = Stgm.Read;
+            const STGM exclusiveRead = STGM.READ;
             var hResult = NativeMethods.SHCreateStreamOnFileEx(path, exclusiveRead, noAttribute, false, null, out IStream stream);
 
-            if (hResult == Hresult.Ok)
+            if (hResult == HRESULT.S_OK)
             {
                 Apps = AppxPackageHelper.GetAppsFromManifest(stream).Select(appInManifest => new UWPApplication(appInManifest, this)).Where(a =>
                 {
@@ -127,7 +131,6 @@ namespace Microsoft.Plugin.Program.Programs
             Version = PackageVersion.Unknown;
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Intentionally keeping the process alive.")]
         public static UWPApplication[] All()
         {
             var windows10 = new Version(10, 0);
@@ -164,7 +167,6 @@ namespace Microsoft.Plugin.Program.Programs
             }
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Intentionally keeping the process alive.")]
         private static IEnumerable<IPackage> CurrentUserPackages()
         {
             return PackageManagerWrapper.FindPackagesForCurrentUser().Where(p =>
@@ -188,6 +190,7 @@ namespace Microsoft.Plugin.Program.Programs
             return FamilyName;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1309:Use ordinal string comparison", Justification = "Using CurrentCultureIgnoreCase since this is used with FamilyName")]
         public override bool Equals(object obj)
         {
             if (obj is UWP uwp)
@@ -213,18 +216,6 @@ namespace Microsoft.Plugin.Program.Programs
             Windows81,
             Windows8,
             Unknown,
-        }
-
-        [Flags]
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1714:Flags enums should have plural names", Justification = "This name is consistent with the corresponding win32 flags: https://docs.microsoft.com/en-us/windows/win32/stg/stgm-constants ")]
-        public enum Stgm : long
-        {
-            Read = 0x00000000L,
-        }
-
-        public enum Hresult : int
-        {
-            Ok = 0x0,
         }
     }
 }

@@ -1,12 +1,6 @@
 #pragma once
 
-#include "gdiplus.h"
 #include <common/utils/string_utils.h>
-
-namespace FancyZonesDataTypes
-{
-    struct DeviceIdData;
-}
 
 namespace FancyZonesUtils
 {
@@ -40,16 +34,6 @@ namespace FancyZonesUtils
         RECT m_rect{};
     };
 
-    inline void MakeWindowTransparent(HWND window)
-    {
-        int const pos = -GetSystemMetrics(SM_CXVIRTUALSCREEN) - 8;
-        if (wil::unique_hrgn hrgn{ CreateRectRgn(pos, 0, (pos + 1), 1) })
-        {
-            DWM_BLURBEHIND bh = { DWM_BB_ENABLE | DWM_BB_BLURREGION, TRUE, hrgn.get(), FALSE };
-            DwmEnableBlurBehindWindow(window, &bh);
-        }
-    }
-
     inline void InitRGB(_Out_ RGBQUAD* quad, BYTE alpha, COLORREF color)
     {
         ZeroMemory(quad, sizeof(*quad));
@@ -59,7 +43,7 @@ namespace FancyZonesUtils
         quad->rgbBlue = GetBValue(color) * alpha / 255;
     }
 
-    inline void FillRectARGB(wil::unique_hdc& hdc, RECT const* prcFill, BYTE alpha, COLORREF color, bool blendAlpha)
+    inline void FillRectARGB(wil::unique_hdc& hdc, RECT const* prcFill, BYTE alpha, COLORREF color, bool /*blendAlpha*/)
     {
         BITMAPINFO bi;
         ZeroMemory(&bi, sizeof(bi));
@@ -109,7 +93,7 @@ namespace FancyZonesUtils
         }
     }
 
-    inline BYTE OpacitySettingToAlpha(int opacity)
+    constexpr inline BYTE OpacitySettingToAlpha(int opacity)
     {
         return static_cast<BYTE>(opacity * 2.55);
     }
@@ -120,7 +104,7 @@ namespace FancyZonesUtils
         using result_t = std::vector<std::pair<HMONITOR, RECT>>;
         result_t result;
 
-        auto enumMonitors = [](HMONITOR monitor, HDC hdc, LPRECT pRect, LPARAM param) -> BOOL {
+        auto enumMonitors = [](HMONITOR monitor, HDC /*hdc*/, LPRECT /*pRect*/, LPARAM param) -> BOOL {
             MONITORINFOEX mi;
             mi.cbSize = sizeof(mi);
             result_t& result = *reinterpret_cast<result_t*>(param);
@@ -142,7 +126,7 @@ namespace FancyZonesUtils
         using result_t = std::vector<std::pair<HMONITOR, MONITORINFOEX>>;
         result_t result;
 
-        auto enumMonitors = [](HMONITOR monitor, HDC hdc, LPRECT pRect, LPARAM param) -> BOOL {
+        auto enumMonitors = [](HMONITOR monitor, HDC /*hdc*/, LPRECT /*pRect*/, LPARAM param) -> BOOL {
             MONITORINFOEX mi;
             mi.cbSize = sizeof(mi);
             result_t& result = *reinterpret_cast<result_t*>(param);
@@ -184,41 +168,40 @@ namespace FancyZonesUtils
         return result;
     }
 
-    std::wstring GetDisplayDeviceId(const std::wstring& device, std::unordered_map<std::wstring, DWORD>& displayDeviceIdxMap);
+    constexpr RECT PrepareRectForCycling(RECT windowRect, RECT workAreaRect, DWORD vkCode) noexcept
+    {
+        LONG deltaX = 0, deltaY = 0;
+        switch (vkCode)
+        {
+        case VK_UP:
+            deltaY = workAreaRect.bottom - workAreaRect.top;
+            break;
+        case VK_DOWN:
+            deltaY = workAreaRect.top - workAreaRect.bottom;
+            break;
+        case VK_LEFT:
+            deltaX = workAreaRect.right - workAreaRect.left;
+            break;
+        case VK_RIGHT:
+            deltaX = workAreaRect.left - workAreaRect.right;
+        }
+
+        windowRect.left += deltaX;
+        windowRect.right += deltaX;
+        windowRect.top += deltaY;
+        windowRect.bottom += deltaY;
+
+        return windowRect;
+    }
 
     UINT GetDpiForMonitor(HMONITOR monitor) noexcept;
     void OrderMonitors(std::vector<std::pair<HMONITOR, RECT>>& monitorInfo);
 
-    // Parameter rect is in windowOfRect coordinates
-    RECT AdjustRectForSizeWindowToRect(HWND window, RECT rect, HWND windowOfRect) noexcept;
-
-    // Parameter rect must be in screen coordinates (e.g. obtained from GetWindowRect)
-    void SizeWindowToRect(HWND window, RECT rect) noexcept;
-
-    void SwitchToWindow(HWND window) noexcept;
-
-    bool HasNoVisibleOwner(HWND window) noexcept;
-    bool IsStandardWindow(HWND window);
-    bool IsCandidateForLastKnownZone(HWND window, const std::vector<std::wstring>& excludedApps) noexcept;
-    bool IsCandidateForZoning(HWND window, const std::vector<std::wstring>& excludedApps) noexcept;
-
-    bool IsWindowMaximized(HWND window) noexcept;
-    void SaveWindowSizeAndOrigin(HWND window) noexcept;
-    void RestoreWindowSize(HWND window) noexcept;
-    void RestoreWindowOrigin(HWND window) noexcept;
-
     bool IsValidGuid(const std::wstring& str);
+    std::optional<GUID> GuidFromString(const std::wstring& str) noexcept;
     std::optional<std::wstring> GuidToString(const GUID& guid) noexcept;
 
-    std::wstring GenerateUniqueId(HMONITOR monitor, const std::wstring& devideId, const std::wstring& virtualDesktopId);
-    std::wstring GenerateUniqueIdAllMonitorsArea(const std::wstring& virtualDesktopId);
-    std::wstring TrimDeviceId(const std::wstring& deviceId);
-
-    RECT PrepareRectForCycling(RECT windowRect, RECT workAreaRect, DWORD vkCode) noexcept;
     size_t ChooseNextZoneByPosition(DWORD vkCode, RECT windowRect, const std::vector<RECT>& zoneRects) noexcept;
 
-    // If HWND is already dead, we assume it wasn't elevated
-    bool IsProcessOfWindowElevated(HWND window);
-
-    bool IsSplashScreen(HWND window);
+    void SwallowKey(const WORD key) noexcept;
 }

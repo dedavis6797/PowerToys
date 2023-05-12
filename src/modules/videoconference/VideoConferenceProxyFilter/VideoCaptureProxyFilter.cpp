@@ -117,8 +117,7 @@ HRESULT VideoCaptureProxyPin::ConnectedTo(IPin** pPin)
         return VFW_E_NOT_CONNECTED;
     }
 
-    _connectedInputPin.try_copy_to(pPin);
-    return S_OK;
+    return _connectedInputPin.try_copy_to(pPin) ? S_OK : E_FAIL;
 }
 
 HRESULT VideoCaptureProxyPin::ConnectionMediaType(AM_MEDIA_TYPE* pmt)
@@ -129,7 +128,7 @@ HRESULT VideoCaptureProxyPin::ConnectionMediaType(AM_MEDIA_TYPE* pmt)
         return VFW_E_NOT_CONNECTED;
     }
 
-    *pmt = *CopyMediaType(_mediaFormat).release();
+    *pmt = *CopyMediaType(_mediaFormat.get()).release();
     return S_OK;
 }
 
@@ -194,15 +193,21 @@ HRESULT VideoCaptureProxyPin::EnumMediaTypes(IEnumMediaTypes** ppEnum)
         return E_POINTER;
     }
 
+    *ppEnum = nullptr;
+
     auto enumerator = winrt::make_self<MediaTypeEnumerator>();
-    enumerator->_objects.emplace_back(CopyMediaType(_mediaFormat));
+    enumerator->_objects.emplace_back(CopyMediaType(_mediaFormat.get()));
     *ppEnum = enumerator.detach();
 
     return S_OK;
 }
 
-HRESULT VideoCaptureProxyPin::QueryInternalConnections(IPin**, ULONG*)
+HRESULT VideoCaptureProxyPin::QueryInternalConnections(IPin** pins, ULONG*)
 {
+    if (pins)
+    {
+        *pins = nullptr;
+    }
     return E_NOTIMPL;
 }
 
@@ -246,8 +251,7 @@ HRESULT VideoCaptureProxyPin::GetFormat(AM_MEDIA_TYPE** ppmt)
         LOG("VideoCaptureProxyPin::GetFormat FAILED ppmt");
         return E_POINTER;
     }
-
-    *ppmt = CopyMediaType(_mediaFormat).release();
+    *ppmt = CopyMediaType(_mediaFormat.get()).release();
     return S_OK;
 }
 
@@ -295,7 +299,7 @@ HRESULT VideoCaptureProxyPin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** ppmt, BY
     caps.MinBitsPerSecond = vih->dwBitRate;
     caps.MaxBitsPerSecond = caps.MinBitsPerSecond;
 
-    *ppmt = CopyMediaType(_mediaFormat).release();
+    *ppmt = CopyMediaType(_mediaFormat.get()).release();
 
     const auto caps_begin = reinterpret_cast<const char*>(&caps);
     std::copy(caps_begin, caps_begin + sizeof(caps), pSCC);
@@ -345,7 +349,7 @@ HRESULT VideoCaptureProxyPin::Get(
         return E_UNEXPECTED;
     }
 
-    *(GUID*)pPropData = PIN_CATEGORY_CAPTURE;
+    *static_cast<GUID*>(pPropData) = PIN_CATEGORY_CAPTURE;
 
     LOG("VideoCaptureProxyPin::Get SUCCESS");
     return S_OK;
@@ -676,8 +680,8 @@ HRESULT VideoCaptureProxyFilter::GetSyncSource(IReferenceClock** pClock)
     {
         return E_POINTER;
     }
-    _clock.try_copy_to(pClock);
-    return S_OK;
+    *pClock = nullptr;
+    return _clock.try_copy_to(pClock) ? S_OK : E_FAIL;
 }
 
 GUID MapDShowSubtypeToMFT(const GUID& dshowSubtype)
@@ -708,6 +712,10 @@ HRESULT VideoCaptureProxyFilter::EnumPins(IEnumPins** ppEnum)
         LOG("VideoCaptureProxyFilter::EnumPins null arg provided");
         return E_POINTER;
     }
+    *ppEnum = nullptr;
+    auto enumerator = winrt::make_self<ObjectEnumerator<IPin, IEnumPins>>();
+    auto detached_enumerator = enumerator.detach();
+    *ppEnum = detached_enumerator;
 
     std::unique_lock<std::mutex> lock{ _worker_mutex };
 
@@ -757,7 +765,7 @@ HRESULT VideoCaptureProxyFilter::EnumPins(IEnumPins** ppEnum)
 
         auto& webcam = webcams[*selectedCamIdx];
         auto pin = winrt::make_self<VideoCaptureProxyPin>();
-        pin->_mediaFormat = CopyMediaType(webcam.bestFormat.mediaType);
+        pin->_mediaFormat = CopyMediaType(webcam.bestFormat.mediaType.get());
         pin->_owningFilter = this;
         _outPin.attach(pin.detach());
 
@@ -796,14 +804,17 @@ HRESULT VideoCaptureProxyFilter::EnumPins(IEnumPins** ppEnum)
         }
     }
 
-    auto enumerator = winrt::make_self<ObjectEnumerator<IPin, IEnumPins>>();
-    enumerator->_objects.emplace_back(_outPin);
-    *ppEnum = enumerator.detach();
+    detached_enumerator->_objects.emplace_back(_outPin);
+
     return S_OK;
 }
 
-HRESULT VideoCaptureProxyFilter::FindPin(LPCWSTR, IPin**)
+HRESULT VideoCaptureProxyFilter::FindPin(LPCWSTR, IPin** pin)
 {
+    if (pin)
+    {
+        *pin = nullptr;
+    }
     return E_NOTIMPL;
 }
 
@@ -858,6 +869,13 @@ VideoCaptureProxyFilter::~VideoCaptureProxyFilter()
 
     _worker_cv.notify_one();
     _worker_thread.join();
+    if (_settingsUpdateChannel)
+    {
+        _settingsUpdateChannel->access([](auto settingsMemory) {
+            auto settings = reinterpret_cast<CameraSettingsUpdateChannel*>(settingsMemory._data);
+            settings->cameraInUse = false;
+        });
+    }
 }
 
 VideoCaptureProxyFilter::SyncedSettings VideoCaptureProxyFilter::SyncCurrentSettings()

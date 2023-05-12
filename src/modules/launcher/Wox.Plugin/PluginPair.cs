@@ -67,10 +67,11 @@ namespace Wox.Plugin
             {
                 Metadata.Disabled = false;
                 InitializePlugin(api);
+
                 if (!IsPluginInitialized)
                 {
-                    var title = string.Format(CultureInfo.CurrentCulture, Resources.FailedToLoadPluginTitle, Metadata.Name);
-                    api.ShowMsg(title, Resources.FailedToLoadPluginDescription, string.Empty, false);
+                    string description = $"{Resources.FailedToLoadPluginDescription} {Metadata.Name}\n\n{Resources.FailedToLoadPluginDescriptionPartTwo}";
+                    api.ShowMsg(Resources.FailedToLoadPluginTitle, description, string.Empty, false);
                 }
             }
             else
@@ -79,11 +80,15 @@ namespace Wox.Plugin
             }
 
             Metadata.ActionKeyword = setting.ActionKeyword;
+            Metadata.WeightBoost = setting.WeightBoost;
+
             Metadata.IsGlobal = setting.IsGlobal;
 
-            if (Plugin is ISettingProvider)
+            (Plugin as ISettingProvider)?.UpdateSettings(setting);
+
+            if (IsPluginInitialized && !Metadata.Disabled)
             {
-                (Plugin as ISettingProvider).UpdateSettings(setting);
+                (Plugin as IReloadable)?.ReloadData();
             }
         }
 
@@ -134,9 +139,7 @@ namespace Wox.Plugin
             {
                 _assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Metadata.ExecuteFilePath);
             }
-#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception e)
-#pragma warning restore CA1031 // Do not catch general exception types
             {
                 Log.Exception($"Couldn't load assembly for {Metadata.Name} in {Metadata.ExecuteFilePath}", e, MethodBase.GetCurrentMethod().DeclaringType);
                 return false;
@@ -168,9 +171,7 @@ namespace Wox.Plugin
             {
                 Plugin = (IPlugin)Activator.CreateInstance(type);
             }
-#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception e)
-#pragma warning restore CA1031 // Do not catch general exception types
             {
                 Log.Exception($"Can't create instance for <{Metadata.Name}> in {Metadata.ExecuteFilePath}", e, MethodBase.GetCurrentMethod().DeclaringType);
                 return false;
@@ -195,9 +196,7 @@ namespace Wox.Plugin
                     API = api,
                 });
             }
-#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception e)
-#pragma warning restore CA1031 // Do not catch general exception types
             {
                 Log.Exception($"Fail to Init plugin: {Metadata.Name}", e, GetType());
                 return false;

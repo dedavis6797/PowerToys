@@ -20,7 +20,7 @@ namespace PowerLauncher.Helper
     public static class EnvironmentHelper
     {
         // The HashSet will contain the list of environment variables that will be skipped on update.
-        private const string PathVariable = "Path";
+        private const string PathVariableName = "Path";
         private static readonly HashSet<string> _protectedProcessVariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
@@ -139,9 +139,7 @@ namespace PowerLauncher.Helper
                                 }
                             }
                         }
-#pragma warning disable CA1031 // Do not catch general exception types
                         catch (Exception ex)
-#pragma warning restore CA1031 // Do not catch general exception types
                         {
                             // The dotnet method "System.Environment.SetEnvironmentVariable" has it's own internal method to check the input parameters. Here we catch the exceptions that we don't check before updating the environment variable and log it to avoid crashes of PT Run.
                             Log.Exception($"Unhandled exception while updating the environment variable [{kv.Key}] for the PT Run process. (The variable value has a length of [{varValueLength}].)", ex, typeof(PowerLauncher.Helper.EnvironmentHelper));
@@ -179,16 +177,26 @@ namespace PowerLauncher.Helper
                     string uVarValue = (string)uVar.Value;
 
                     // The variable name of the path variable can be upper case, lower case ore mixed case. So we have to compare case insensitive.
-                    if (!uVarKey.Equals(PathVariable, StringComparison.OrdinalIgnoreCase))
+                    if (!uVarKey.Equals(PathVariableName, StringComparison.OrdinalIgnoreCase))
                     {
                         environment[uVarKey] = uVarValue;
                     }
                     else
                     {
-                        // When we merging the PATH variables we can't simply overwrite machine layer's value. The path variable must be joined by appending the user value to the machine value.
-                        // This is the official behavior and checked by trying it out on the physical machine.
-                        string newPathValue = environment[uVarKey].EndsWith(';') ? environment[uVarKey] + uVarValue : environment[uVarKey] + ';' + uVarValue;
-                        environment[uVarKey] = newPathValue;
+                        // Checking if the list of (machine) variables contains a path variable
+                        if (environment.ContainsKey(PathVariableName))
+                        {
+                            // When we merging the PATH variables we can't simply overwrite machine layer's value. The path variable must be joined by appending the user value to the machine value.
+                            // This is the official behavior and checked by trying it out on the physical machine.
+                            string newPathValue = environment[uVarKey].EndsWith(';') ? environment[uVarKey] + uVarValue : environment[uVarKey] + ';' + uVarValue;
+                            environment[uVarKey] = newPathValue;
+                        }
+                        else
+                        {
+                            // Log warning and only write user value into dictionary
+                            Log.Warn("The List of machine variables doesn't contain a path variable! The merged list won't contain any machine paths in the path variable.", typeof(PowerLauncher.Helper.EnvironmentHelper));
+                            environment[uVarKey] = uVarValue;
+                        }
                     }
                 }
             }
@@ -205,9 +213,7 @@ namespace PowerLauncher.Helper
             {
                 return Environment.GetEnvironmentVariables(target);
             }
-#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception ex)
-#pragma warning restore CA1031 // Do not catch general exception types
             {
                 Log.Exception($"Unhandled exception while getting the environment variables for target '{target}'.", ex, typeof(PowerLauncher.Helper.EnvironmentHelper));
                 return new Hashtable();
@@ -215,9 +221,9 @@ namespace PowerLauncher.Helper
         }
 
         /// <summary>
-        /// Checks wether this process is running under the system user/account.
+        /// Checks whether this process is running under the system user/account.
         /// </summary>
-        /// <returns>A boolean value that indicates wether this process is running under system account (true) or not (false).</returns>
+        /// <returns>A boolean value that indicates whether this process is running under system account (true) or not (false).</returns>
         private static bool IsRunningAsSystem()
         {
             using (var identity = WindowsIdentity.GetCurrent())

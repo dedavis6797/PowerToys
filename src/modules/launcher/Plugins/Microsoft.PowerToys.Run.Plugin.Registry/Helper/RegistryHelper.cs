@@ -13,8 +13,6 @@ using Microsoft.Win32;
 
 namespace Microsoft.PowerToys.Run.Plugin.Registry.Helper
 {
-#pragma warning disable CA1031 // Do not catch general exception types
-
     /// <summary>
     /// Helper class to easier work with the registry
     /// </summary>
@@ -44,14 +42,14 @@ namespace Microsoft.PowerToys.Run.Plugin.Registry.Helper
         /// </summary>
         /// <param name="query">The query to search</param>
         /// <returns>A combination of a list of base <see cref="RegistryKey"/> and the sub keys</returns>
-        internal static (IEnumerable<RegistryKey>? baseKey, string subKey) GetRegistryBaseKey(in string query)
+        internal static (IEnumerable<RegistryKey>? BaseKey, string SubKey) GetRegistryBaseKey(in string query)
         {
             if (string.IsNullOrWhiteSpace(query))
             {
                 return (null, string.Empty);
             }
 
-            var baseKey = query.Split('\\').FirstOrDefault();
+            var baseKey = query.Split('\\').FirstOrDefault() ?? string.Empty;
             var subKey = query.Replace(baseKey, string.Empty, StringComparison.InvariantCultureIgnoreCase).TrimStart('\\');
 
             var baseKeyResult = _baseKeys
@@ -100,7 +98,7 @@ namespace Microsoft.PowerToys.Run.Plugin.Registry.Helper
 
             do
             {
-                result = FindSubKey(subKey, subKeysNames.ElementAtOrDefault(index));
+                result = FindSubKey(subKey, subKeysNames.ElementAtOrDefault(index) ?? string.Empty);
 
                 if (result.Count == 0)
                 {
@@ -145,7 +143,7 @@ namespace Microsoft.PowerToys.Run.Plugin.Registry.Helper
             Win32.Registry.SetValue(@"HKEY_Current_User\Software\Microsoft\Windows\CurrentVersion\Applets\Regedit", "LastKey", fullKey);
 
             // -m => allow multi-instance (hidden start option)
-            Wox.Infrastructure.Helper.OpenInShell("regedit.exe", "-m", null, true);
+            Wox.Infrastructure.Helper.OpenInShell("regedit.exe", "-m", null, Wox.Infrastructure.Helper.ShellRunAsType.Administrator);
         }
 
         /// <summary>
@@ -167,15 +165,24 @@ namespace Microsoft.PowerToys.Run.Plugin.Registry.Helper
                         continue;
                     }
 
-                    if (string.Equals(subKey, searchSubKey, StringComparison.InvariantCultureIgnoreCase))
+                    if (string.Equals(subKey, searchSubKey, StringComparison.OrdinalIgnoreCase))
                     {
-                        list.Add(new RegistryEntry(parentKey.OpenSubKey(subKey, RegistryKeyPermissionCheck.ReadSubTree)));
+                        var key = parentKey.OpenSubKey(subKey, RegistryKeyPermissionCheck.ReadSubTree);
+                        if (key != null)
+                        {
+                            list.Add(new RegistryEntry(key));
+                        }
+
                         return list;
                     }
 
                     try
                     {
-                        list.Add(new RegistryEntry(parentKey.OpenSubKey(subKey, RegistryKeyPermissionCheck.ReadSubTree)));
+                        var key = parentKey.OpenSubKey(subKey, RegistryKeyPermissionCheck.ReadSubTree);
+                        if (key != null)
+                        {
+                            list.Add(new RegistryEntry(key));
+                        }
                     }
                     catch (Exception exception)
                     {
@@ -221,6 +228,4 @@ namespace Microsoft.PowerToys.Run.Plugin.Registry.Helper
             return list;
         }
     }
-
-    #pragma warning restore CA1031 // Do not catch general exception types
 }

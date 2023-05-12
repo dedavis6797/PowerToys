@@ -47,7 +47,7 @@ private:
     static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) noexcept;
 
     static constexpr auto m_className = L"MouseHighlighter";
-    static constexpr auto m_windowTitle = L"MouseHighlighter";
+    static constexpr auto m_windowTitle = L"PowerToys Mouse Highlighter";
     HWND m_hwndOwner = NULL;
     HWND m_hwnd = NULL;
     HINSTANCE m_hinstance = NULL;
@@ -132,7 +132,7 @@ void Highlighter::AddDrawingPoint(MouseButton button)
     auto circleGeometry = m_compositor.CreateEllipseGeometry();
     circleGeometry.Radius({ m_radius, m_radius });
     auto circleShape = m_compositor.CreateSpriteShape(circleGeometry);
-    circleShape.Offset({ (float)pt.x, (float)pt.y });
+    circleShape.Offset({ static_cast<float>(pt.x), static_cast<float>(pt.y )});
     if (button == MouseButton::Left)
     {
         circleShape.FillBrush(m_compositor.CreateColorBrush(m_leftClickColor));
@@ -150,8 +150,8 @@ void Highlighter::AddDrawingPoint(MouseButton button)
     // Perhaps add a task to the Dispatcher every X circles to clean up.
 
     // Get back on top in case other Window is now the topmost.
-    SetWindowPos(m_hwnd, HWND_TOPMOST, GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
-        GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN), 0);
+    // HACK: Draw with 1 pixel off. Otherwise Windows glitches the task bar transparency when a transparent window fill the whole screen.
+    SetWindowPos(m_hwnd, HWND_TOPMOST, GetSystemMetrics(SM_XVIRTUALSCREEN) + 1, GetSystemMetrics(SM_YVIRTUALSCREEN) + 1, GetSystemMetrics(SM_CXVIRTUALSCREEN) - 2, GetSystemMetrics(SM_CYVIRTUALSCREEN) - 2, 0);
 }
 
 void Highlighter::UpdateDrawingPointPosition(MouseButton button)
@@ -166,12 +166,12 @@ void Highlighter::UpdateDrawingPointPosition(MouseButton button)
 
     if (button == MouseButton::Left)
     {
-        m_leftPointer.Offset({ (float)pt.x, (float)pt.y });
+        m_leftPointer.Offset({ static_cast<float>(pt.x), static_cast<float>(pt.y )});
     }
     else
     {
         //right
-        m_rightPointer.Offset({ (float)pt.x, (float)pt.y });
+        m_rightPointer.Offset({ static_cast<float>(pt.x), static_cast<float>(pt.y )});
     }
 }
 void Highlighter::StartDrawingPointFading(MouseButton button)
@@ -204,6 +204,12 @@ void Highlighter::StartDrawingPointFading(MouseButton button)
 
 void Highlighter::ClearDrawing()
 {
+    if (nullptr == m_shape || nullptr == m_shape.Shapes())
+    {
+        // Guard against m_shape not being initialized.
+        return;
+    }
+
     m_shape.Shapes().Clear();
 }
 
@@ -211,7 +217,7 @@ LRESULT CALLBACK Highlighter::MouseHookProc(int nCode, WPARAM wParam, LPARAM lPa
 {
     if (nCode >= 0)
     {
-        MSLLHOOKSTRUCT* hookData = (MSLLHOOKSTRUCT*)lParam;
+        MSLLHOOKSTRUCT* hookData = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
         switch (wParam)
         {
         case WM_LBUTTONDOWN:
@@ -259,8 +265,9 @@ void Highlighter::StartDrawing()
     Logger::info("Starting draw mode.");
     Trace::StartHighlightingSession();
     m_visible = true;
-    SetWindowPos(m_hwnd, HWND_TOPMOST, GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
-        GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN), 0);
+
+    // HACK: Draw with 1 pixel off. Otherwise Windows glitches the task bar transparency when a transparent window fill the whole screen.
+    SetWindowPos(m_hwnd, HWND_TOPMOST, GetSystemMetrics(SM_XVIRTUALSCREEN) + 1, GetSystemMetrics(SM_YVIRTUALSCREEN) + 1, GetSystemMetrics(SM_CXVIRTUALSCREEN) - 2, GetSystemMetrics(SM_CYVIRTUALSCREEN) - 2, 0);
     ClearDrawing();
     ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
     m_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, m_hinstance, 0);
@@ -286,7 +293,7 @@ void Highlighter::SwitchActivationMode()
 }
 
 void Highlighter::ApplySettings(MouseHighlighterSettings settings) {
-    m_radius = (float)settings.radius;
+    m_radius = static_cast<float>(settings.radius);
     m_fadeDelay_ms = settings.fadeDelayMs;
     m_fadeDuration_ms = settings.fadeDurationMs;
     m_leftClickColor = settings.leftButtonColor;
@@ -342,7 +349,7 @@ bool Highlighter::MyRegisterClass(HINSTANCE hInstance)
         wc.hInstance = hInstance;
         wc.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
+        wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
         wc.lpszClassName = m_className;
 
         if (!RegisterClassW(&wc))

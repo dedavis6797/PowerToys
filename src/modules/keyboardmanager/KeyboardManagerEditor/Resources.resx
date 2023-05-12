@@ -152,14 +152,15 @@
     <value>Continue Anyway</value>
   </data>
   <data name="EditKeyboard_SourceHeader" xml:space="preserve">
-    <value>Key:</value>
+    <value>Physical Key:</value>
     <comment>Key on a keyboard</comment>
   </data>
   <data name="EditKeyboard_TargetHeader" xml:space="preserve">
     <value>Mapped To:</value>
   </data>
   <data name="EditShortcuts_SourceHeader" xml:space="preserve">
-    <value>Shortcut:</value>
+    <value>Physical Shortcut:</value>
+    <comment>key sequence on a keyboard, example Control+C to copy a string</comment>
   </data>
   <data name="EditShortcuts_TargetHeader" xml:space="preserve">
     <value>Mapped To:</value>
@@ -168,7 +169,8 @@
     <value>Target App:</value>
   </data>
   <data name="EditKeyboard_OrphanedDialogTitle" xml:space="preserve">
-    <value>The following keys have been reassigned and you won't be able to use them for their original assignment:</value>
+    <value>Warning: The following keys do not have assignments:</value>
+    <comment>Key on a keyboard</comment>
   </data>
   <data name="EditKeyboard_PartialConfirmationDialogTitle" xml:space="preserve">
     <value>Some of the keys could not be remapped. Do you want to continue anyway?</value>
@@ -180,80 +182,17 @@
     <value>Select the key you want to change (Key) and then the key or shortcut you want it to become (Mapped To).</value>
   </data>
   <data name="EditKeyboard_InfoExample" xml:space="preserve">
-    <value>For example, if you want to press A and get "Ctrl+C", key "A" would be your "Key" column and the shortcut "Ctrl+C" would be your "Mapped To" column.</value>
+    <value>Example of a remapping: Press A and get "Ctrl+C", "A" would be your "Physical Key" and "Ctrl+C" would be your "Mapped To" command.</value>
   </data>
   <data name="EditShortcuts_Info" xml:space="preserve">
     <value>Select the shortcut you want to change (Shortcut) and then the key or shortcut you want it to invoke (Mapped To).</value>
   </data>
   <data name="EditShortcuts_InfoExample" xml:space="preserve">
-    <value>For example, if you want to press "Ctrl+C" and get "Alt" only on Microsoft Edge, "Ctrl+C" would be your "Shortcut" column, the key "Alt" would be your "Mapped To" column, and "MSEdge" would be your "Target App" column. If no target app is entered, it will apply globally. The name must be the process name and not the app name.</value>
-  </data>
-  <data name="ErrorMessage_RemapSuccessful" xml:space="preserve">
-    <value>Remapping successful</value>
-  </data>
-  <data name="ErrorMessage_RemapUnsuccessful" xml:space="preserve">
-    <value>Some remappings were not applied</value>
-  </data>
-  <data name="ErrorMessage_SameKeyPreviouslyMapped" xml:space="preserve">
-    <value>Cannot remap a key more than once</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_MappedToSameKey" xml:space="preserve">
-    <value>Cannot remap a key to itself</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_ConflictingModifierKey" xml:space="preserve">
-    <value>Cannot remap this key as it conflicts with another remapped key</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_SameShortcutPreviouslyMapped" xml:space="preserve">
-    <value>Cannot remap a shortcut more than once for the same target app</value>
-  </data>
-  <data name="ErrorMessage_MapToSameShortcut" xml:space="preserve">
-    <value>Cannot remap a shortcut to itself</value>
-  </data>
-  <data name="ErrorMessage_ConflictingModifierShortcut" xml:space="preserve">
-    <value>Cannot remap this shortcut as it conflicts with another remapped shortcut</value>
-  </data>
-  <data name="ErrorMessage_WinL" xml:space="preserve">
-    <value>Cannot remap from/to Win L</value>
-    <comment>Win refers to Windows as in the OS</comment>
-  </data>
-  <data name="ErrorMessage_CtrlAltDel" xml:space="preserve">
-    <value>Cannot remap from/to Ctrl Alt Del</value>
-  </data>
-  <data name="ErrorMessage_SaveFailed" xml:space="preserve">
-    <value>Failed to save the remappings</value>
-  </data>
-  <data name="ErrorMessage_ShortcutStartWithModifier" xml:space="preserve">
-    <value>Shortcut must start with a modifier key</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_ShortcutNoRepeatedModifier" xml:space="preserve">
-    <value>Shortcut cannot contain a repeated modifier</value>
-  </data>
-  <data name="ErrorMessage_ShortcutAtleast2Keys" xml:space="preserve">
-    <value>Shortcut must have atleast 2 keys</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_ShortcutOneActionKey" xml:space="preserve">
-    <value>Shortcut must contain an action key</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_ShortcutMaxOneActionKey" xml:space="preserve">
-    <value>Shortcut cannot have more than one action key</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_MaxShortcutSize" xml:space="preserve">
-    <value>Shortcuts can only have up to 2 modifier keys</value>
-    <comment>Key on a keyboard</comment>
-  </data>
-  <data name="ErrorMessage_Default" xml:space="preserve">
-    <value>Unexpected error</value>
+    <value>Example of a remapping: Press "Alt+T" and get "Ctrl+T" only on Microsoft Edge, "Alt+T" would be your "Physical Shortcut", "Ctrl+T" would be your "Mapped To", and "MSEdge" (exe name) would be your "Target App". Note, if you remapped a physical key, that will influence the "Physical Shortcut".</value>
   </data>
   <data name="Type_Button" xml:space="preserve">
     <value>Type</value>
-    <comment>As in type a key</comment>
+    <comment>As in type a key on a keyboard</comment>
   </data>
   <data name="TypeKey_Title" xml:space="preserve">
     <value>Press a key on selected keyboard:</value>
@@ -325,7 +264,7 @@
     <value>Shortcut cannot contain a repeated modifier</value>
   </data>
   <data name="ErrorMessage_ShortcutAtleast2Keys" xml:space="preserve">
-    <value>Shortcut must have atleast 2 keys</value>
+    <value>Shortcut must have at least 2 keys</value>
     <comment>Key on a keyboard</comment>
   </data>
   <data name="ErrorMessage_ShortcutOneActionKey" xml:space="preserve">
@@ -362,6 +301,7 @@
   </data>
   <data name="AutomationProperties_Row" xml:space="preserve">
     <value>Row </value>
+    <comment>Row as in horizontal rows in a table, and columns</comment>
   </data>
   <data name="ERRORMESSAGE_DISABLEASACTIONKEY" xml:space="preserve">
     <value>Disable can not be an action or a modifier key</value>

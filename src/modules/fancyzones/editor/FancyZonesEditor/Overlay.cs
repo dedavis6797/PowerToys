@@ -6,8 +6,8 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
-using FancyZonesEditor.Logs;
 using FancyZonesEditor.Models;
+using ManagedCommon;
 
 namespace FancyZonesEditor
 {
@@ -107,7 +107,7 @@ namespace FancyZonesEditor
                     if (settings != null)
                     {
                         settings.SetAppliedModel(null);
-                        settings.UpdateDefaultModels();
+                        settings.UpdateTemplateModels();
                     }
 
                     Update();

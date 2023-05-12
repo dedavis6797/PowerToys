@@ -17,15 +17,16 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Xml;
 using ManagedCommon;
 using Microsoft.Plugin.Program.Logger;
-using Microsoft.Plugin.Program.Win32;
 using Wox.Infrastructure;
 using Wox.Infrastructure.Image;
 using Wox.Plugin;
+using Wox.Plugin.Common;
+using Wox.Plugin.Common.Win32;
 using Wox.Plugin.Logger;
-using Wox.Plugin.SharedCommands;
-using static Microsoft.Plugin.Program.Programs.UWP;
+using PackageVersion = Microsoft.Plugin.Program.Programs.UWP.PackageVersion;
 
 namespace Microsoft.Plugin.Program.Programs
 {
@@ -53,6 +54,9 @@ namespace Microsoft.Plugin.Program.Programs
         public string Name => DisplayName;
 
         public string Location => Package.Location;
+
+        // Localized path based on windows display language
+        public string LocationLocalized => Package.LocationLocalized;
 
         public bool Enabled { get; set; }
 
@@ -118,13 +122,12 @@ namespace Microsoft.Plugin.Program.Programs
 
             // Using CurrentCulture since this is user facing
             var toolTipTitle = string.Format(CultureInfo.CurrentCulture, "{0}: {1}", Properties.Resources.powertoys_run_plugin_program_file_name, result.Title);
-            var toolTipText = string.Format(CultureInfo.CurrentCulture, "{0}: {1}", Properties.Resources.powertoys_run_plugin_program_file_path, Package.Location);
+            var toolTipText = string.Format(CultureInfo.CurrentCulture, "{0}: {1}", Properties.Resources.powertoys_run_plugin_program_file_path, LocationLocalized);
             result.ToolTipData = new ToolTipData(toolTipTitle, toolTipText);
 
             return result;
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Intentionally keeping the process alive.")]
         public List<ContextMenuResult> ContextMenus(string queryArguments, IPublicAPI api)
         {
             if (api == null)
@@ -157,6 +160,8 @@ namespace Microsoft.Plugin.Program.Programs
                                 return true;
                             },
                         });
+
+                // We don't add context menu to 'run as different user', because UWP applications normally installed per user and not for all users.
             }
 
             contextMenus.Add(
@@ -202,7 +207,6 @@ namespace Microsoft.Plugin.Program.Programs
             return contextMenus;
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Intentionally keeping the process alive, and showing the user an error message")]
         private async void Launch(IPublicAPI api, string queryArguments)
         {
             var appManager = new ApplicationActivationHelper.ApplicationActivationManager();
@@ -213,8 +217,9 @@ namespace Microsoft.Plugin.Program.Programs
                 {
                     appManager.ActivateApplication(UserModelId, queryArguments, noFlags, out var unusedPid);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    ProgramLogger.Exception($"Unable to launch UWP {DisplayName}", ex, MethodBase.GetCurrentMethod().DeclaringType, queryArguments);
                     var name = "Plugin: " + Properties.Resources.wox_plugin_program_plugin_name;
                     var message = $"{Properties.Resources.powertoys_run_plugin_program_uwp_failed}: {DisplayName}";
                     api.ShowMsg(name, message, string.Empty);
@@ -268,12 +273,25 @@ namespace Microsoft.Plugin.Program.Programs
                 var manifest = Package.Location + "\\AppxManifest.xml";
                 if (File.Exists(manifest))
                 {
-                    var file = File.ReadAllText(manifest);
-
-                    // Using OrdinalIgnoreCase since this is used internally
-                    if (file.Contains("TrustLevel=\"mediumIL\"", StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        return true;
+                        // Check the manifest to verify if the Trust Level for the application is "mediumIL"
+                        var file = File.ReadAllText(manifest);
+                        var xmlDoc = new XmlDocument();
+                        xmlDoc.LoadXml(file);
+                        var xmlRoot = xmlDoc.DocumentElement;
+                        var namespaceManager = new XmlNamespaceManager(xmlDoc.NameTable);
+                        namespaceManager.AddNamespace("uap10", "http://schemas.microsoft.com/appx/manifest/uap/windows10/10");
+                        var trustLevelNode = xmlRoot.SelectSingleNode("//*[local-name()='Application' and @uap10:TrustLevel]", namespaceManager); // According to https://learn.microsoft.com/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps#create-a-package-manifest-for-the-sparse-package and https://learn.microsoft.com/uwp/schemas/appxpackage/uapmanifestschema/element-application#attributes
+
+                        if (trustLevelNode?.Attributes["uap10:TrustLevel"]?.Value == "mediumIL")
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        ProgramLogger.Exception($"Unable to parse manifest file for {DisplayName}", e, MethodBase.GetCurrentMethod().DeclaringType, manifest);
                     }
                 }
             }
@@ -292,6 +310,7 @@ namespace Microsoft.Plugin.Program.Programs
                 // https://github.com/talynone/Wox.Plugin.WindowsUniversalAppLauncher/blob/master/StoreAppLauncher/Helpers/NativeApiHelper.cs#L139-L153
                 string key = resourceReference.Substring(prefix.Length);
                 string parsed;
+                string parsedFallback = string.Empty;
 
                 // Using Ordinal/OrdinalIgnoreCase since these are used internally
                 if (key.StartsWith("//", StringComparison.Ordinal))
@@ -309,28 +328,37 @@ namespace Microsoft.Plugin.Program.Programs
                 else
                 {
                     parsed = prefix + "///resources/" + key;
+
+                    // e.g. for Windows Terminal version >= 1.12 DisplayName and Description resources are not in the 'resources' subtree
+                    parsedFallback = prefix + "///" + key;
                 }
 
                 var outBuffer = new StringBuilder(128);
                 string source = $"@{{{packageFullName}? {parsed}}}";
                 var capacity = (uint)outBuffer.Capacity;
                 var hResult = NativeMethods.SHLoadIndirectString(source, outBuffer, capacity, IntPtr.Zero);
-                if (hResult == Hresult.Ok)
+                if (hResult != HRESULT.S_OK)
                 {
-                    var loaded = outBuffer.ToString();
-                    if (!string.IsNullOrEmpty(loaded))
+                    if (!string.IsNullOrEmpty(parsedFallback))
                     {
-                        return loaded;
-                    }
-                    else
-                    {
-                        ProgramLogger.Exception($"Can't load null or empty result pri {source} in uwp location {Package.Location}", new NullReferenceException(), GetType(), Package.Location);
+                        string sourceFallback = $"@{{{packageFullName}? {parsedFallback}}}";
+                        hResult = NativeMethods.SHLoadIndirectString(sourceFallback, outBuffer, capacity, IntPtr.Zero);
+                        if (hResult == HRESULT.S_OK)
+                        {
+                            var loaded = outBuffer.ToString();
+                            if (!string.IsNullOrEmpty(loaded))
+                            {
+                                return loaded;
+                            }
+                            else
+                            {
+                                ProgramLogger.Exception($"Can't load null or empty result pri {sourceFallback} in uwp location {Package.Location}", new ArgumentNullException(null), GetType(), Package.Location);
 
-                        return string.Empty;
+                                return string.Empty;
+                            }
+                        }
                     }
-                }
-                else
-                {
+
                     // https://github.com/Wox-launcher/Wox/issues/964
                     // known hresult 2147942522:
                     // 'Microsoft Corporation' violates pattern constraint of '\bms-resource:.{1,256}'.
@@ -341,6 +369,20 @@ namespace Microsoft.Plugin.Program.Programs
                     ProgramLogger.Exception($"Load pri failed {source} with HResult {hResult} and location {Package.Location}", e, GetType(), Package.Location);
 
                     return string.Empty;
+                }
+                else
+                {
+                    var loaded = outBuffer.ToString();
+                    if (!string.IsNullOrEmpty(loaded))
+                    {
+                        return loaded;
+                    }
+                    else
+                    {
+                        ProgramLogger.Exception($"Can't load null or empty result pri {source} in uwp location {Package.Location}", new ArgumentNullException(null), GetType(), Package.Location);
+
+                        return string.Empty;
+                    }
                 }
             }
             else
@@ -375,7 +417,7 @@ namespace Microsoft.Plugin.Program.Programs
             LogoPathFromUri(logoUri, theme);
         }
 
-        // scale factors on win10: https://docs.microsoft.com/en-us/windows/uwp/controls-and-patterns/tiles-and-notifications-app-assets#asset-size-tables,
+        // scale factors on win10: https://learn.microsoft.com/windows/uwp/controls-and-patterns/tiles-and-notifications-app-assets#asset-size-tables,
         private static readonly Dictionary<PackageVersion, List<int>> _scaleFactors = new Dictionary<PackageVersion, List<int>>
         {
             { PackageVersion.Windows10, new List<int> { 100, 125, 150, 200, 400 } },
@@ -397,9 +439,9 @@ namespace Microsoft.Plugin.Program.Programs
                     paths.Add(path);
                 }
 
-                if (_scaleFactors.ContainsKey(Package.Version))
+                if (_scaleFactors.TryGetValue(Package.Version, out List<int> factors))
                 {
-                    foreach (var factor in _scaleFactors[Package.Version])
+                    foreach (var factor in factors)
                     {
                         if (highContrast)
                         {
@@ -547,15 +589,15 @@ namespace Microsoft.Plugin.Program.Programs
 
         internal void LogoPathFromUri(string uri, Theme theme)
         {
-            // all https://msdn.microsoft.com/windows/uwp/controls-and-patterns/tiles-and-notifications-app-assets
-            // windows 10 https://msdn.microsoft.com/en-us/library/windows/apps/dn934817.aspx
-            // windows 8.1 https://msdn.microsoft.com/en-us/library/windows/apps/hh965372.aspx#target_size
-            // windows 8 https://msdn.microsoft.com/en-us/library/windows/apps/br211475.aspx
+            // all https://learn.microsoft.com/windows/uwp/controls-and-patterns/tiles-and-notifications-app-assets
+            // windows 10 https://msdn.microsoft.com/library/windows/apps/dn934817.aspx
+            // windows 8.1 https://msdn.microsoft.com/library/windows/apps/hh965372.aspx#target_size
+            // windows 8 https://msdn.microsoft.com/library/windows/apps/br211475.aspx
             string path;
             bool isLogoUriSet;
 
             // Using Ordinal since this is used internally with uri
-            if (uri.Contains("\\", StringComparison.Ordinal))
+            if (uri.Contains('\\', StringComparison.Ordinal))
             {
                 path = Path.Combine(Package.Location, uri);
             }

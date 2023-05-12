@@ -4,10 +4,6 @@
 
 #include <functional>
 
-interface IWorkArea;
-interface IFancyZonesSettings;
-interface IZoneSet;
-
 struct WinHookEvent;
 
 interface __declspec(uuid("{50D3F0F5-736E-4186-BDF4-3D6BEE150C3A}")) IFancyZones : public IUnknown
@@ -52,4 +48,4 @@ interface __declspec(uuid("{2CB37E8F-87E6-4AEC-B4B2-E0FDC873343F}")) IFancyZones
     (PKBDLLHOOKSTRUCT info) = 0;
 };
 
-winrt::com_ptr<IFancyZones> MakeFancyZones(HINSTANCE hinstance, const winrt::com_ptr<IFancyZonesSettings>& settings, std::function<void()> disableCallback) noexcept;
+winrt::com_ptr<IFancyZones> MakeFancyZones(HINSTANCE hinstance, std::function<void()> disableCallback) noexcept;

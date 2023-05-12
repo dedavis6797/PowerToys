@@ -33,7 +33,7 @@ namespace ImageResizer.Models
         }
 
         [TestMethod]
-        public void ExecuteCopiesFrameMetadataExceptWhenMetadataCannotBeCloned()
+        public void ExecuteCopiesFrameMetadataEvenWhenMetadataCannotBeCloned()
         {
             var operation = new ResizeOperation("TestMetadataIssue2447.jpg", _directory, Settings());
 
@@ -41,7 +41,7 @@ namespace ImageResizer.Models
 
             AssertEx.Image(
                 _directory.File(),
-                image => Assert.IsNull(((BitmapMetadata)image.Frames[0].Metadata).CameraModel));
+                image => Assert.IsNotNull(((BitmapMetadata)image.Frames[0].Metadata).CameraModel));
         }
 
         [TestMethod]
@@ -550,8 +550,6 @@ namespace ImageResizer.Models
                     _directory.Dispose();
                 }
 
-                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
-                // TODO: set large fields to null
                 disposedValue = true;
             }
         }

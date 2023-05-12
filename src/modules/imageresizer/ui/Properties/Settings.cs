@@ -21,10 +21,15 @@ namespace ImageResizer.Properties
     public sealed partial class Settings : IDataErrorInfo, INotifyPropertyChanged
     {
         private static readonly IFileSystem _fileSystem = new FileSystem();
+        private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
+        {
+            NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+            WriteIndented = true,
+        };
 
         // Used to synchronize access to the settings.json file
         private static Mutex _jsonMutex = new Mutex();
-        private static string _settingsPath = _fileSystem.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Microsoft", "PowerToys", "ImageResizer", "settings.json");
+        private static string _settingsPath = _fileSystem.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Microsoft", "PowerToys", "Image Resizer", "settings.json");
         private string _fileNameFormat;
         private bool _shrinkOnly;
         private int _selectedSizeIndex;
@@ -409,7 +414,7 @@ namespace ImageResizer.Properties
         public void Save()
         {
             _jsonMutex.WaitOne();
-            string jsonData = JsonSerializer.Serialize(new SettingsWrapper() { Properties = this });
+            string jsonData = JsonSerializer.Serialize(new SettingsWrapper() { Properties = this }, _jsonSerializerOptions);
 
             // Create directory if it doesn't exist
             IFileInfo file = _fileSystem.FileInfo.FromFileName(SettingsPath);
@@ -422,6 +427,14 @@ namespace ImageResizer.Properties
 
         public void Reload()
         {
+            string oldSettingsDir = _fileSystem.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Microsoft", "PowerToys", "ImageResizer");
+            string settingsDir = _fileSystem.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "Microsoft", "PowerToys", "Image Resizer");
+
+            if (_fileSystem.Directory.Exists(oldSettingsDir) && !_fileSystem.Directory.Exists(settingsDir))
+            {
+                _fileSystem.Directory.Move(oldSettingsDir, settingsDir);
+            }
+
             _jsonMutex.WaitOne();
             if (!_fileSystem.File.Exists(SettingsPath))
             {
@@ -434,7 +447,7 @@ namespace ImageResizer.Properties
             var jsonSettings = new Settings();
             try
             {
-                jsonSettings = JsonSerializer.Deserialize<SettingsWrapper>(jsonData)?.Properties;
+                jsonSettings = JsonSerializer.Deserialize<SettingsWrapper>(jsonData, _jsonSerializerOptions)?.Properties;
             }
             catch (JsonException)
             {
